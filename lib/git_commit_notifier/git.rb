@@ -178,6 +178,18 @@ class GitCommitNotifier::Git
     rescue ArgumentError
       nil
     end
+
+    def redmine_path
+      from_shell("git config hooks.redminepath").strip
+    rescue ArgumentError
+      nil
+    end
+
+    def redmine_project
+      from_shell("git config hooks.redmineproject").strip
+    rescue ArgumentError
+      nil
+    end
+
   end
 end
-

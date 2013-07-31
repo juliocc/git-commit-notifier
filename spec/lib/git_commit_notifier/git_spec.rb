@@ -16,19 +16,19 @@ describe GitCommitNotifier::Git do
   describe :show do
     it "should get data from shell: git show without whitespaces" do
       expected = 'some data from git show'
-      mock(GitCommitNotifier::Git).from_shell("git show #{SAMPLE_REV} --date=rfc2822 --pretty=fuller -w") { expected }
-      GitCommitNotifier::Git.show(SAMPLE_REV, :ignore_whitespaces => true).should == expected
+      mock(GitCommitNotifier::Git).from_shell("git show #{SAMPLE_REV} --date=rfc2822 --pretty=fuller -M0.5 -w") { expected }
+      GitCommitNotifier::Git.show(SAMPLE_REV, :ignore_whitespace => 'all').should == expected
     end
 
     it "should get data from shell: git show with whitespaces" do
       expected = 'some data from git show'
-      mock(GitCommitNotifier::Git).from_shell("git show #{SAMPLE_REV} --date=rfc2822 --pretty=fuller") { expected }
-      GitCommitNotifier::Git.show(SAMPLE_REV, :ignore_whitespaces => false).should == expected
+      mock(GitCommitNotifier::Git).from_shell("git show #{SAMPLE_REV} --date=rfc2822 --pretty=fuller -M0.5") { expected }
+      GitCommitNotifier::Git.show(SAMPLE_REV, :ignore_whitespace => 'none').should == expected
     end
 
     it "should strip given revision" do
-      mock(GitCommitNotifier::Git).from_shell("git show #{SAMPLE_REV} --date=rfc2822 --pretty=fuller -w")
-      GitCommitNotifier::Git.show("#{SAMPLE_REV}\n", :ignore_whitespaces => true)
+      mock(GitCommitNotifier::Git).from_shell("git show #{SAMPLE_REV} --date=rfc2822 --pretty=fuller -M0.5 -w")
+      GitCommitNotifier::Git.show("#{SAMPLE_REV}\n", :ignore_whitespace => 'all')
     end
   end
 
@@ -70,15 +70,23 @@ describe GitCommitNotifier::Git do
 
     it "should return folder name if no emailprefix and directory not ended with .git" do
       mock(GitCommitNotifier::Git).from_shell("git config hooks.emailprefix") { " " }
-      mock(GitCommitNotifier::Git).git_dir { "/home/someuser/repositories/myrepo" }
+      stub(GitCommitNotifier::Git).toplevel_dir { "/home/someuser/repositories/myrepo" }
       GitCommitNotifier::Git.repo_name.should == "myrepo"
     end
 
     it "should return folder name without extension if no emailprefix and directory ended with .git" do
       mock(GitCommitNotifier::Git).from_shell("git config hooks.emailprefix") { " " }
-      mock(GitCommitNotifier::Git).git_dir { "/home/someuser/repositories/myrepo.git" }
+      stub(GitCommitNotifier::Git).toplevel_dir { "/home/someuser/repositories/myrepo.git" }
       GitCommitNotifier::Git.repo_name.should == "myrepo"
     end
+
+    it "should return folder name if no emailprefix and toplevel dir and directory not ended with .git" do
+      mock(GitCommitNotifier::Git).from_shell("git config hooks.emailprefix") { " " }
+      stub(GitCommitNotifier::Git).toplevel_dir { "" }
+      stub(GitCommitNotifier::Git).git_dir { "/home/someuser/repositories/myrepo.git" }
+      GitCommitNotifier::Git.repo_name.should == "myrepo"
+    end
+
   end
 
   describe :log do
@@ -118,7 +126,7 @@ describe GitCommitNotifier::Git do
       files = ["M       README.rdoc\n",
                "D       git_commit_notifier/Rakefile\n",
                "M       post-receive\n"]
-      mock(GitCommitNotifier::Git).from_shell("git log #{SAMPLE_REV}..#{SAMPLE_REV_2} --name-status --pretty=oneline" ) { IO.read(FIXTURES_PATH + 'git_log_name_status') }
+      mock(GitCommitNotifier::Git).from_shell("git log #{SAMPLE_REV}..#{SAMPLE_REV_2} --name-status --pretty=oneline -M0.5" ) { IO.read(FIXTURES_PATH + 'git_log_name_status') }
       GitCommitNotifier::Git.changed_files(SAMPLE_REV, SAMPLE_REV_2).should == files
     end
   end
@@ -128,7 +136,7 @@ describe GitCommitNotifier::Git do
       files = ["M       README.rdoc\n",
                "D       git_commit_notifier/Rakefile\n",
                "M       post-receive\n"]
-      mock(GitCommitNotifier::Git).from_shell("git log #{SAMPLE_REV}..#{SAMPLE_REV_2} --name-status --pretty=oneline" ) { IO.read(FIXTURES_PATH + 'git_log_name_status') }
+      mock(GitCommitNotifier::Git).from_shell("git log #{SAMPLE_REV}..#{SAMPLE_REV_2} --name-status --pretty=oneline -M0.5" ) { IO.read(FIXTURES_PATH + 'git_log_name_status') }
       output = GitCommitNotifier::Git.split_status(SAMPLE_REV, SAMPLE_REV_2)
       output[:m].should == [ 'README.rdoc', 'post-receive' ]
       output[:d].should == [ 'git_commit_notifier/Rakefile' ]

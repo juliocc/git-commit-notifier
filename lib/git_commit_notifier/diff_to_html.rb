@@ -28,7 +28,7 @@ module GitCommitNotifier
           return m unless match
           r = { :phrase => match[1] }
           captures = match[2].split(/[\s\&\,]+/).map { |m| (m =~ /(\d+)/) ? $1 : m }.reject { |c| c.empty? }
-          r[:links] = captures.map { |mn| { :title => "##{mn}", :url => "#{url}/issues/show/#{mn}" } }
+          r[:links] = captures.map { |mn| { :title => "##{mn}", :url => "#{url}/issues/#{mn}" } }
           r
         end },
       :bugzilla => { :search_for => /\bBUG\s*(\d+)/i, :replace_with => '#{url}/show_bug.cgi?id=\1' },
@@ -47,8 +47,15 @@ module GitCommitNotifier
       @lines_added = 0
       @file_added = false
       @file_removed = false
+      @file_renamed = false
+      @file_renamed_old_name = false
+      @file_renamed_new_name = false
       @file_changes = []
       @binary = false
+      unless String.method_defined?(:encode!)
+        require 'iconv'
+        @ic = Iconv.new('UTF-8', 'UTF-8//IGNORE')
+      end
     end
 
     def range_info(range)
@@ -90,9 +97,11 @@ module GitCommitNotifier
     end
 
     # Gets ignore_whitespace setting from {#config}.
-    # @return [Boolean] true if whitespaces should be ignored in diff; otherwise false.
-    def ignore_whitespaces?
-      config['ignore_whitespace'].nil? || config['ignore_whitespace']
+    # @return [String] How whitespaces should be treated in diffs (none, all, change)
+    def ignore_whitespace
+      return 'all' if config['ignore_whitespace'].nil?
+      return 'none' if !config['ignore_whitespace']
+      (['all', 'change', 'none'].include?(config['ignore_whitespace']) ? config['ignore_whitespace'] : 'all')
     end
 
     # Adds separator between diff blocks to @diff_result.
@@ -178,26 +187,43 @@ module GitCommitNotifier
         "Deleted"
       elsif @file_added
         "Added"
+      elsif @file_renamed
+      	"Renamed"
       else
         "Changed"
       end
 
       file_name = @current_file_name
 
+      # Adjust filenames and hashes in case of file renames
+      if @file_renamed
+        file_name = @file_renamed_new_name
+        @current_sha = Git.sha_of_filename(@current_commit, file_name)
+      end
+
       # TODO: these filenames, etc, should likely be properly html escaped
-      if config['link_files']
-        file_name = if config["link_files"] == "gitweb" && config["gitweb"]
+      file_link = file_name
+      if config['link_files'] && !@file_removed
+        file_link = if config["link_files"] == "gitweb" && config["gitweb"]
           "<a href='#{config['gitweb']['path']}?p=#{config['gitweb']['project'] || "#{Git.repo_name}.git"};f=#{file_name};h=#{@current_sha};hb=#{@current_commit}'>#{file_name}</a>"
         elsif config["link_files"] == "gitorious" && config["gitorious"]
           "<a href='#{config['gitorious']['path']}/#{config['gitorious']['project']}/#{config['gitorious']['repository']}/blobs/#{branch_name}/#{file_name}'>#{file_name}</a>"
+        elsif config["link_files"] == "trac" && config["trac"]
+          "<a href='#{config['trac']['path']}/#{@current_commit}/#{file_name}'>#{file_name}</a>"
         elsif config["link_files"] == "cgit" && config["cgit"]
-          "<a href='#{config['cgit']['path']}/#{config['cgit']['project']}/tree/#{file_name}'>#{file_name}</a>"
+          "<a href='#{config['cgit']['path']}/#{config['cgit']['project'] || "#{Git.repo_name_real}"}/tree/#{file_name}?h=#{branch_name}'>#{file_name}</a>"
         elsif config["link_files"] == "gitlabhq" && config["gitlabhq"]
           if config["gitlabhq"]["version"] && config["gitlabhq"]["version"] < 1.2
             "<a href='#{config['gitlabhq']['path']}/#{Git.repo_name.gsub(".", "_")}/tree/#{@current_commit}/#{file_name}'>#{file_name}</a>"
+          elsif config["gitlabhq"]["version"] && config["gitlabhq"]["version"] >= 4.0
+            "<a href='#{config['gitlabhq']['path']}/#{Git.repo_name_with_parent.gsub(".", "_")}/commit/#{@current_commit}'>#{file_name}</a>"
           else
             "<a href='#{config['gitlabhq']['path']}/#{Git.repo_name.gsub(".", "_")}/#{@current_commit}/tree/#{file_name}'>#{file_name}</a>"
           end
+        elsif config["link_files"] == "gitalist" && config["gitalist"]
+          "<a href='#{config['gitalist']['path']}/#{config['gitalist']['project'] || Git.repo_name}/#{@current_commit}/blob/#{file_name}'>#{file_name}</a>"
+        elsif config["link_files"] == "github" && config["github"]
+          "<a href='#{config['github']['path']}/#{config['github']['project']}/#{Git.repo_name}/blob/#{@current_commit}/#{file_name}'>#{file_name}</a>"
         elsif config["link_files"] == "redmine" && config["redmine"]
           redmine_path = config['redmine']['path'] || Git.redmine_path
           redmine_project = config['redmine']['project'] || Git.redmine_project
@@ -207,13 +233,14 @@ module GitCommitNotifier
         end
       end
 
-      header = "#{op} #{binary}file #{file_name}"
-
       if show_summary?
-        @file_changes << [ file_name, header ]
+        @file_changes << {
+          :file_name => file_name, 
+          :text => "#{op} #{binary}file #{file_name}",
+        }
       end
 
-      "<h2 id=\"#{file_name}\">#{header}</h2>\n"
+      "<a name=\"#{file_name}\"></a><h2>#{op} #{binary}file #{file_link}</h2>\n"
     end
 
     # Determines are two lines are sequentially placed in diff (no skipped lines between).
@@ -233,8 +260,15 @@ module GitCommitNotifier
 
       @lines_added = 0
       @diff_result << operation_description
-      if !@diff_lines.empty? && !@too_many_files
+
+      if (@file_renamed || !@diff_lines.empty?) && (!@too_many_files)
         @diff_result << '<table>'
+
+        ##Adds a ROW in the table for the File Rename Details (if at all present)
+        if @file_renamed
+          @diff_result << "<tr class='renamed'>\n<td class='ln'>&nbsp;</td><td class='ln'></td><td>&nbsp;<u>#{@file_renamed_old_name}</u> was renamed to <u>#{@file_renamed_new_name}</u></td></tr>"
+        end
+       
         removals = []
         additions = []
 
@@ -276,6 +310,9 @@ module GitCommitNotifier
       @left_ln = nil
       @file_added = false
       @file_removed = false
+      @file_renamed = false
+      @file_renamed_old_name = false
+      @file_renamed_new_name = false
       @binary = false
     end
 
@@ -352,6 +389,11 @@ module GitCommitNotifier
       elsif line =~ /\/dev\/null differ/ # Binary files ... and /dev/null differ (removal)
         @binary = true
         @file_removed = true
+      elsif line =~ /^rename from (.*)/
+        @file_renamed = true
+        @file_renamed_old_name = line.scan(/^rename from (.*)/)[0][0].to_s
+      elsif line =~ /^rename to (.*)/
+        @file_renamed_new_name = line.scan(/^rename to (.*)/)[0][0].to_s
       elsif op == '@'
         @left_ln, @right_ln = range_info(line)
       end
@@ -494,9 +536,11 @@ module GitCommitNotifier
       :gitweb    => lambda { |config, commit| "<a href='#{config['gitweb']['path']}?p=#{config['gitweb']['project'] || "#{Git.repo_name}.git"};a=commitdiff;h=#{commit}'>#{commit}</a>" },
       :gitorious => lambda { |config, commit| "<a href='#{config['gitorious']['path']}/#{config['gitorious']['project']}/#{config['gitorious']['repository']}/commit/#{commit}'>#{commit}</a>" },
       :trac      => lambda { |config, commit| "<a href='#{config['trac']['path']}/#{commit}'>#{commit}</a>" },
-      :cgit      => lambda { |config, commit| "<a href='#{config['cgit']['path']}/#{config['cgit']['project']}/commit/?id=#{commit}'>#{commit}</a>" },
+      :cgit      => lambda { |config, commit| "<a href='#{config['cgit']['path']}/#{config['cgit']['project'] || "#{Git.repo_name_real}"}/commit/?id=#{commit}'>#{commit}</a>" },
       :gitlabhq  => lambda { |config, commit| "<a href='#{config['gitlabhq']['path']}/#{Git.repo_name.gsub(".", "_")}/commits/#{commit}'>#{commit}</a>" },
+      :gitalist  => lambda { |config, commit| "<a href='#{config['gitalist']['path']}/projects/#{config['gitalist']['project'] || Git.repo_name}/#{commit}/log'>#{commit}</a>" },
       :redmine   => lambda { |config, commit| "<a href='#{config['redmine']['path'] || Git.redmine_path}/projects/#{config['redmine']['project'] || Git.redmine_project|| Git.repo_name}/repository/revisions/#{commit}'>#{commit}</a>" },
+      :github    => lambda { |config, commit| "<a href='#{config['github']['path']}/#{config['github']['project']}/#{Git.repo_name}/commit/#{commit}'>#{commit}</a>" },
       :default   => lambda { |config, commit| commit.to_s }
     }.freeze
 
@@ -506,15 +550,24 @@ module GitCommitNotifier
     # @see COMMIT_LINK_MAP
     def markup_commit_for_html(commit)
       mode = (config["link_files"] || "default").to_sym
-      mode = :default  unless config.has_key?(mode)
+      mode = :default  unless config.has_key?(mode.to_s)
       mode = :default  unless COMMIT_LINK_MAP.has_key?(mode)
       COMMIT_LINK_MAP[mode].call(config, commit)
     end
 
     def diff_for_commit(commit)
       @current_commit = commit
-      raw_diff = truncate_long_lines(Git.show(commit, :ignore_whitespaces => ignore_whitespaces?))
+      raw_diff = truncate_long_lines(Git.show(commit, :ignore_whitespace => ignore_whitespace))
       raise "git show output is empty" if raw_diff.empty?
+
+      if raw_diff.respond_to?(:encode!)
+        unless raw_diff.valid_encoding?
+          raw_diff.encode!("UTF-16", "UTF-8", :invalid => :replace, :undef => :replace)
+          raw_diff.encode!("UTF-8", "UTF-16")
+        end
+      else
+        raw_diff = @ic.iconv(raw_diff)
+      end
 
       commit_info = extract_commit_info_from_git_show_output(raw_diff)
       return nil  if old_commit?(commit_info)
@@ -547,16 +600,18 @@ module GitCommitNotifier
       title += "<dt>Message</dt><dd class='#{multi_line_message ? "multi-line" : ""}'>#{message_array_as_html(commit_info[:message])}</dd>\n"
       title += "</dl>"
 
-      html_diff = diff_for_revision(extract_diff_from_git_show_output(raw_diff))
-      message_array = message_array_as_html(changed_files.split("\n"))
+      @file_changes = []
       text = ""
 
-      if show_summary? and @file_changes.respond_to?("each")
+      html_diff = diff_for_revision(extract_diff_from_git_show_output(raw_diff))
+      message_array = message_array_as_html(changed_files.split("\n"))
+
+      if show_summary?
         title += "<ul>"
 
-        @file_changes.each do |file_name, header|
-          title += "<li><a href=\"\##{file_name}\">#{header}</a></li>"
-          text += "#{header}\n"
+        @file_changes.each do |change|
+          title += "<li><a href=\"\##{change[:file_name]}\">#{change[:text]}</a></li>"
+          text += "#{change[:text]}\n"
         end
 
         title += "</ul>"
@@ -649,12 +704,29 @@ module GitCommitNotifier
         message_array = tag_info[:contents].split("\n")
         multi_line_message = message_array.count > 1
         html += "<dt>Message</dt><dd class='#{multi_line_message ? "multi-line" : ""}'>#{message_array_as_html(message_array)}</dd>\n"
+
+        if config['show_a_shortlog_of_commits_since_the_last_annotated_tag']
+          list_of_commits_in_between = Git.list_of_commits_between_current_commit_and_last_tag(ref_name, tag_info[:tagobject])
+          if list_of_commits_in_between.length > 0
+            html += "<dt><br/>Commits since the last annotated tag</dt><dd><br/><br/><ul>"                    
+            list_of_commits_in_between.each do |commit|
+              if config['link_files'].to_s != "none"
+                l = markup_commit_for_html(commit[0])
+                l = l.gsub(/>.*<\/a>/,">#{commit[1]}</a>") # Replace the link text with the commit message (the original link text is the commit hash)
+                html += "<li>#{l}</li>"
+              else
+                html += "<li>#{commit[1]}</li>"
+              end
+            end
+            html += "</ul></dd>"
+          end
+        end
         html += "</dl>"
 
-        text = "Tag:</strong> #{tag} (#{change_type == :create ? "added" : "updated"})\n"
+        text = "Tag: #{tag} (#{change_type == :create ? "added" : "updated"})\n"
         text += "Type: annotated\n"
         text += "Commit: #{tag_info[:tagobject]}\n"
-        text += "Tagger: tag_info[:taggername] tag_info[:taggeremail]\n"
+        text += "Tagger: #{tag_info[:taggername]} #{tag_info[:taggeremail]}\n"
         text += "Message: #{tag_info[:contents]}\n"
 
         commit_info[:message] = message

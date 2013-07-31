@@ -30,6 +30,7 @@ class GitCommitNotifier::Webhook
           'added' => @changed[:a],
           'modified' => @changed[:m],
           'removed' => @changed[:d],
+          'renamed' => @changed[:r],
           'committer' => {
             'name' => @committer,
             'email' => @email

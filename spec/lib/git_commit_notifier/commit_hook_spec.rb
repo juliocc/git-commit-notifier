@@ -79,7 +79,7 @@ describe GitCommitNotifier::CommitHook do
     mock(GitCommitNotifier::Git).repo_name { 'testproject' }
     mock(GitCommitNotifier::Git).changed_files('7e4f6b4', '4f13525') { [] }
     REVISIONS.each do |rev|
-      mock(GitCommitNotifier::Git).show(rev, :ignore_whitespaces => true) { IO.read(FIXTURES_PATH + "git_show_#{rev}") }
+      mock(GitCommitNotifier::Git).show(rev, :ignore_whitespace => 'all') { IO.read(FIXTURES_PATH + "git_show_#{rev}") }
       dont_allow(GitCommitNotifier::Git).describe(rev) { IO.read(FIXTURES_PATH + "git_describe_#{rev}") }
     end
   end
@@ -111,6 +111,7 @@ describe GitCommitNotifier::CommitHook do
   describe :run do
     it "should report informational message when no recipients specified" do
       mock(File).exists?(:noconfig) { false }
+      mock(GitCommitNotifier::CommitHook).info(/Unable to find/)
       mock(GitCommitNotifier::Git).mailing_list_address { nil }
       mock(GitCommitNotifier::CommitHook).info(/recipient/)
       GitCommitNotifier::CommitHook.run(:noconfig, :rev1, :rev2, 'master')

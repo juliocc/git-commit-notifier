@@ -9,6 +9,9 @@ end
 if RUBY_VERSION >= '1.9'
   Encoding.default_external = "utf-8"
   Encoding.default_internal = "utf-8"
+
+  require 'coveralls'
+  Coveralls.wear!
 end
 
 require 'rubygems'

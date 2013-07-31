@@ -18,7 +18,7 @@ Gem::Specification.new do |s|
   s.test_files       = `git ls-files -- {test,spec,features}/*`.split("\n")
   s.executables      = `git ls-files -- bin/*`.split("\n").map { |f| File.basename(f) }
 
-  s.homepage = %q{http://bitboxer.github.com/git-commit-notifier/}
+  s.homepage = %q{http://git-commit-notifier.github.com/}
   s.require_paths = ["lib"]
   s.rubygems_version = %q{1.3.7}
   s.summary = %q{Sends git commit messages with diffs}
@@ -36,8 +36,7 @@ Gem::Specification.new do |s|
   s.add_development_dependency(%q<rspec-core>, [">= 0"])
   s.add_development_dependency(%q<rspec-expectations>, [">= 0"])
   s.add_development_dependency(%q<rr>, ["~> 1.0"])
-  s.add_development_dependency(%q<faker>, ["~> 1.0"])
+  s.add_development_dependency(%q<faker>, ["~> 1.1.2"])
   s.add_development_dependency(%q<yard>, ["~> 0.8.1"])
   s.add_development_dependency(%q<redcarpet>, ["~> 2.1"])
 end
-

@@ -106,7 +106,7 @@ describe GitCommitNotifier::DiffToHtml do
     mock(GitCommitNotifier::Git).rev_type(REVISIONS.last) { "commit" }
     mock(GitCommitNotifier::Git).new_commits(anything, anything, anything, anything) { REVISIONS.reverse }
     REVISIONS.each do |rev|
-      mock(GitCommitNotifier::Git).show(rev, :ignore_whitespaces => true) { IO.read(FIXTURES_PATH + 'git_show_' + rev) }
+      mock(GitCommitNotifier::Git).show(rev, :ignore_whitespace => 'all') { IO.read(FIXTURES_PATH + 'git_show_' + rev) }
       dont_allow(GitCommitNotifier::Git).describe(rev) { IO.read(FIXTURES_PATH + 'git_describe_' + rev) }
     end
 
@@ -161,7 +161,7 @@ describe GitCommitNotifier::DiffToHtml do
     mock(GitCommitNotifier::Git).rev_type(last_rev) { "commit" }
     mock(GitCommitNotifier::Git).new_commits(anything, anything, anything, anything) { [ 'ff037a73fc1094455e7bbf506171a3f3cf873ae6' ] }
     %w[ ff037a73fc1094455e7bbf506171a3f3cf873ae6 ].each do |rev|
-      mock(GitCommitNotifier::Git).show(rev, :ignore_whitespaces => true) { IO.read(FIXTURES_PATH + 'git_show_' + rev) }
+      mock(GitCommitNotifier::Git).show(rev, :ignore_whitespace => 'all') { IO.read(FIXTURES_PATH + 'git_show_' + rev) }
       dont_allow(GitCommitNotifier::Git).describe(rev) { IO.read(FIXTURES_PATH + 'git_describe_' + rev) }
     end
     diff = GitCommitNotifier::DiffToHtml.new
@@ -206,7 +206,7 @@ describe GitCommitNotifier::DiffToHtml do
         'mediawiki' => 'http://example.com/wiki', # will rework [[text]] to MediaWiki pages
         'redmine' => 'http://redmine.example.com' # will rework refs #123, #125 to Redmine issues
       }
-      @diff.do_message_integration("[[text]] refs #123, #125").should == "<a href=\"http://example.com/wiki/text\">[[text]]</a> refs <a href=\"http://redmine.example.com/issues/show/123\">#123</a>, <a href=\"http://redmine.example.com/issues/show/125\">#125</a>"
+      @diff.do_message_integration("[[text]] refs #123, #125").should == "<a href=\"http://example.com/wiki/text\">[[text]]</a> refs <a href=\"http://redmine.example.com/issues/123\">#123</a>, <a href=\"http://redmine.example.com/issues/125\">#125</a>"
     end
   end
 
